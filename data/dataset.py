@@ -39,23 +39,3 @@ class TrainDataset(Dataset):
         self.column_names = self.data["train"].column_names
         return self.text_2_id(self.data['train'][index])
 
-
-# class TestDataset(Dataset):
-#     '''
-#     Test dataset
-#     '''
-#     def __init__(self, data: List, *args, **kwargs):
-#         self.args = kwargs['args']
-#         self.tokenizer = kwargs['tokenizer']
-#         self.data = data
-#
-#     def __len__(self):
-#         return len(self.data)
-#
-#     def text_2_id(self, text: str):
-#         return self.tokenizer(text, max_length=self.args.max_len, truncation=True,
-#                          padding='max_length', return_tensors='pt')
-#
-#     def __getitem__(self, index):
-#         line = self.data[index]
-#         return self.text_2_id([line[0]]), self.text_2_id([line[1]]), int(line[2])
