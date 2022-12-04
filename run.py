@@ -17,8 +17,8 @@ parser.add_argument('--arch', choices=['bert', 'roberta'], default='bert', help=
 parser.add_argument('--disable_cuda', default=False, help='Whether you want to use cuda or not.')
 parser.add_argument('--n_views', default=2)
 # Parameters
-parser.add_argument("--epochs", default=1, help="Set up the number of epochs you want to train.")
-parser.add_argument("--batch_size", default=64, help="Set up the size of each batch you want to train.")
+parser.add_argument("--epochs", default=50, help="Set up the number of epochs you want to train.")
+parser.add_argument("--batch_size", default=8, help="Set up the size of each batch you want to train.")
 parser.add_argument("--lr", default=1e-5, help="Set up the learning rate.")
 parser.add_argument("--max_len", default=32, help="Set up the maximum total input sequence length after tokenization.")
 parser.add_argument("--pooling", choices=['cls', 'pooler', 'last-avg', 'first-last-avg'], default='cls', help='Choose the pooling method')
