@@ -12,10 +12,12 @@ utils.logging.set_verbosity_error()  # Suppress standard warnings
 
 parser = argparse.ArgumentParser(description="PyTorch SimCSE implementation")
 
-parser.add_argument('--mode', choices=['sup', 'unsup'], default='unsup', help='Train with supervised or unsupervised manner.')
-parser.add_argument('--arch', choices=['bert', 'roberta'], default='bert', help='Choose the model you want to train with.')  # Todo: Add roberta backbone
+parser.add_argument('--mode', choices=['sup', 'unsup'], default='unsup',
+                    help='Train with supervised or unsupervised manner.')
+parser.add_argument('--arch', choices=['bert', 'roberta'], default='bert',
+                    help='Choose the model you want to train with.')
 parser.add_argument('--disable_cuda', default=False, help='Whether you want to use cuda or not.')
-parser.add_argument('--n_views', default=2, help="You can only train this contrastive learning method with 2 different views")  
+parser.add_argument('--n_views', default=2)
 # Parameters
 parser.add_argument("--epochs", default=50, help="Set up the number of epochs you want to train.")
 parser.add_argument("--batch_size", default=8, help="Set up the size of each batch you want to train.")
@@ -28,9 +30,10 @@ parser.add_argument("--weight_decay", default=5e-4, help="Set up the weight deca
 parser.add_argument("--log_every_n_steps", default=10, help="Frequency of keeping log")
 parser.add_argument("--fp16_precision", action='store_true', help='Whether or not to use 16-bit precision GPU training.')
 # Files
-parser.add_argument("--train_data", default="./data/wiki1m_for_simcse.txt",
+parser.add_argument("--train_data", default="./data/training/wiki1m_for_simcse.txt",
                     help="Choose the dataset you want to train with.")  # wiki1m_for_simcse.txt; nli_for_simcse.csv
-parser.add_argument("--save_data", default=True, help="Data saving option")
+parser.add_argument("--save_data", default=True)
+# parser.add_argument("--log_dir", default="./log/")
 # GPU
 parser.add_argument('--gpu-index', default=0, type=int, help='Gpu index.')
 

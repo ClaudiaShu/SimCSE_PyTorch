@@ -1,6 +1,19 @@
 from typing import List
 from torch.utils.data import Dataset
 
+from senteval import utils
+from senteval.binary import CREval, MREval, MPQAEval, SUBJEval
+from senteval.mrpc import MRPCEval
+from senteval.probing import LengthEval, WordContentEval, DepthEval, TopConstituentsEval, BigramShiftEval, TenseEval, \
+    SubjNumberEval, ObjNumberEval, OddManOutEval, CoordinationInversionEval
+from senteval.rank import ImageCaptionRetrievalEval
+from senteval.sick import SICKEval, SICKEntailmentEval
+from senteval.snli import SNLIEval
+from senteval.sst import SSTEval
+from senteval.sts import SICKRelatednessEval, STSBenchmarkEval, STSBenchmarkFinetune
+from senteval.trec import TRECEval
+
+
 class TrainDataset(Dataset):
     '''
     Training dataset
