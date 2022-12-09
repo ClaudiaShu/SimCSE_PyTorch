@@ -15,7 +15,6 @@ class SimCSE(object):
         self.model = kwargs['model'].to(self.args.device)
         self.optimizer = kwargs['optimizer']
         self.scheduler = kwargs['scheduler']
-        self.tokenizer = kwargs['tokenizer']
 
         import socket
         from datetime import datetime
