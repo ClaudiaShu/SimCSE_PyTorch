@@ -75,7 +75,7 @@ def main():
 
     #  It’s a no-op if the 'gpu_index' argument is a negative integer or None.
     with torch.cuda.device(args.gpu_index):
-        simcse = SimCSE(args=args, model=model, tokenizer=tokenizer,
+        simcse = SimCSE(args=args, model=model, 
                         optimizer=optimizer, scheduler=scheduler)
         if args.mode == "sup":
             simcse.train_sup(train_loader=train_loader)
