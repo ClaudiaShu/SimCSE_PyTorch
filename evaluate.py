@@ -42,7 +42,7 @@ parser.add_argument("--mode", type=str,
                     help="What evaluation mode to use (dev: fast mode, dev results; test: full mode, test results); fasttest: fast mode, test results")
 parser.add_argument("--task_set", type=str,
                     choices=['sts', 'transfer', 'full', 'na'],
-                    default='full',
+                    default='sts',
                     help="What set of tasks to evaluate on. If not 'na', this will override '--tasks'")
 parser.add_argument("--tasks", type=str, nargs='+',
                     default=['STS12', 'STS13', 'STS14', 'STS15', 'STS16',
@@ -59,7 +59,9 @@ def print_table(task_names, scores):
 def nlp_eval(args):
 
     # Load transformers' model checkpoint
-    model = AutoModel.from_pretrained(args.model_name_or_path)
+    model_file = "/media/storage/yuxuan/software/SimCSE/runs/Dec10_12-26-07/checkpoint_0010/"
+    model = AutoModel.from_pretrained(model_file)
+    # model = AutoModel.from_pretrained(args.model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model = model.to(device)

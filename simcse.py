@@ -9,13 +9,17 @@ from utils import save_config_file, accuracy, save_checkpoint
 
 torch.manual_seed(0)
 
+'''
+refer: https://github.com/vdogmcgee/SimCSE-Chinese-Pytorch/blob/main/simcse_unsup.py
+'''
+
 class SimCSE(object):
     def __init__(self, *args, **kwargs):
         self.args = kwargs['args']
         self.model = kwargs['model'].to(self.args.device)
         self.optimizer = kwargs['optimizer']
         self.scheduler = kwargs['scheduler']
-        self.tokenizer = kwargs['tokenizer']
+        # self.tokenizer = kwargs['tokenizer']
 
         import socket
         from datetime import datetime
@@ -101,7 +105,33 @@ class SimCSE(object):
 
         # out = self.bert(input_ids, attention_mask, token_type_ids)
         out = self.model(input_ids, attention_mask, token_type_ids, output_hidden_states=True)
+        '''
+        Pooling 
+        last_hidden_state (torch.FloatTensor of shape (batch_size, sequence_length, hidden_size)) 
+        — Sequence of hidden-states at the output of the last layer of the model.
+        
+        pooler_output (torch.FloatTensor of shape (batch_size, hidden_size)) 
+        — Last layer hidden-state of the first token of the sequence (classification token) after 
+        further processing through the layers used for the auxiliary pretraining task. E.g. for 
+        BERT-family of models, this returns the classification token after processing through a 
+        linear layer and a tanh activation function. The linear layer weights are trained from the 
+        next sentence prediction (classification) objective during pretraining.
+        
+        hidden_states (tuple(torch.FloatTensor), optional, returned when output_hidden_states=True 
+        is passed or when config.output_hidden_states=True) 
+        — Tuple of torch.FloatTensor (one for the output of the embeddings, if the model has an 
+        embedding layer, + one for the output of each layer) of shape (batch_size, sequence_length, hidden_size).
+        
+        Hidden-states of the model at the output of each layer plus the optional initial embedding outputs.
 
+        attentions (tuple(torch.FloatTensor), optional, returned when output_attentions=True is 
+        passed or when config.output_attentions=True) 
+        — Tuple of torch.FloatTensor (one for each layer) of shape (batch_size, num_heads, 
+        sequence_length, sequence_length).
+        
+        Attentions weights after the attention softmax, used to compute the weighted average in 
+        the self-attention heads.
+        '''
         if self.args.pooling == 'cls':
             return out.last_hidden_state[:, 0]  # [batch, 768]
 
@@ -133,7 +163,8 @@ class SimCSE(object):
         logging.info(f"Training with gpu: {self.args.disable_cuda}.")
 
         for epoch in range(self.args.epochs):
-            for batch_idx, source in enumerate(tqdm(train_loader), start=1):
+            print(f"Start training epoch {epoch + 1}  ----------------")
+            for batch_idx, source in enumerate(tqdm(train_loader, total=len(train_loader)), start=1):
 
                 real_batch_num = source.get('input_ids').shape[0]
                 input_ids = source.get('input_ids').view(real_batch_num * 3, -1).to(self.args.device)
@@ -150,30 +181,23 @@ class SimCSE(object):
                 scaler.step(self.optimizer)
                 scaler.update()
 
+                self.scheduler.step()
+
                 if n_iter % self.args.log_every_n_steps == 0:
                     top1, top5 = accuracy(logits, labels, topk=(1, 5))
                     self.writer.add_scalar('loss', loss, global_step=n_iter)
                     self.writer.add_scalar('acc/top1', top1[0], global_step=n_iter)
                     self.writer.add_scalar('acc/top5', top5[0], global_step=n_iter)
                     self.writer.add_scalar('learning_rate', self.scheduler.get_last_lr()[0], global_step=n_iter)
+                    logging.debug(f"Epoch: {epoch}\tLoss: {loss}\tTop1 accuracy: {top1[0]}")
 
                 n_iter += 1
-
-                # warmup for the first 10 epochs
-                if epoch >= 10:
-                    self.scheduler.step()
-                logging.debug(f"Epoch: {epoch}\tLoss: {loss}\tTop1 accuracy: {top1[0]}")
 
         if self.args.save_data:
             logging.info("Training has finished.")
             # save model checkpoints
-            checkpoint_name = 'checkpoint_{:04d}.pth.tar'.format(self.args.epochs)
-            save_checkpoint({
-                'epoch': self.args.epochs,
-                'arch': self.args.arch,
-                'state_dict': self.model.state_dict(),
-                'optimizer': self.optimizer.state_dict(),
-            }, is_best=False, filename=os.path.join(self.writer.log_dir, checkpoint_name))
+            checkpoint_name = 'checkpoint'.format(self.args.epochs)
+            self.model.save_pretrained(os.path.join(self.writer.log_dir, checkpoint_name))
             logging.info(f"Model checkpoint and metadata has been saved at {self.writer.log_dir}.")
         else:
             logging.info(f"Model is trained but the checkpoint and metadata has not been save.")
@@ -191,7 +215,8 @@ class SimCSE(object):
         logging.info(f"Training with gpu: {self.args.disable_cuda}.")
 
         for epoch in range(self.args.epochs):
-            for batch_idx, source in enumerate(tqdm(train_loader), start=1):
+            print(f"Start training epoch {epoch+1}  ----------------")
+            for batch_idx, source in enumerate(tqdm(train_loader, total=len(train_loader)), start=1):
 
                 real_batch_num = source.get('input_ids').shape[0]
                 input_ids = source.get('input_ids').view(real_batch_num * 2, -1).to(self.args.device)
@@ -208,30 +233,23 @@ class SimCSE(object):
                 scaler.step(self.optimizer)
                 scaler.update()
 
+                self.scheduler.step()
+
                 if n_iter % self.args.log_every_n_steps == 0:
                     top1, top5 = accuracy(logits, labels, topk=(1, 5))
                     self.writer.add_scalar('loss', loss, global_step=n_iter)
                     self.writer.add_scalar('acc/top1', top1[0], global_step=n_iter)
                     self.writer.add_scalar('acc/top5', top5[0], global_step=n_iter)
                     self.writer.add_scalar('learning_rate', self.scheduler.get_last_lr()[0], global_step=n_iter)
+                    logging.debug(f"Epoch: {epoch}\tLoss: {loss}\tTop1 accuracy: {top1[0]}")
 
                 n_iter += 1
-
-                # warmup for the first 10 epochs
-                if epoch >= 10:
-                    self.scheduler.step()
-                logging.debug(f"Epoch: {epoch}\tLoss: {loss}\tTop1 accuracy: {top1[0]}")
 
         if self.args.save_data:
             logging.info("Training has finished.")
             # save model checkpoints
-            checkpoint_name = 'checkpoint_{:04d}.pth.tar'.format(self.args.epochs)
-            save_checkpoint({
-                'epoch': self.args.epochs,
-                'arch': self.args.arch,
-                'state_dict': self.model.state_dict(),
-                'optimizer': self.optimizer.state_dict(),
-            }, is_best=False, filename=os.path.join(self.writer.log_dir, checkpoint_name))
+            checkpoint_name = 'checkpoint'.format(self.args.epochs)
+            self.model.save_pretrained(os.path.join(self.writer.log_dir, checkpoint_name))
             logging.info(f"Model checkpoint and metadata has been saved at {self.writer.log_dir}.")
         else:
             logging.info(f"Model is trained but the checkpoint and metadata has not been save.")

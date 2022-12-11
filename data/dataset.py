@@ -25,6 +25,7 @@ class TrainDataset(Dataset):
         self.column_names = None
 
     def __len__(self):
+        # return 10
         return len(self.data['train'])
 
     def text_2_id(self, text: str):
@@ -48,6 +49,7 @@ class TrainDataset(Dataset):
                                   return_tensors='pt')
         else:
             raise ValueError("Mismatch in input dimension.")
+
     def __getitem__(self, index: int):
         self.column_names = self.data["train"].column_names
         return self.text_2_id(self.data['train'][index])
