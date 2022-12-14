@@ -1,13 +1,15 @@
 import logging
+from loguru import logger
 import os
+
+import numpy as np
 import torch
 import torch.nn.functional as F
+from scipy.stats import spearmanr
 from torch.cuda.amp import GradScaler, autocast
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 from utils import save_config_file, accuracy, save_checkpoint
-
-torch.manual_seed(0)
 
 '''
 refer: https://github.com/vdogmcgee/SimCSE-Chinese-Pytorch/blob/main/simcse_unsup.py
@@ -18,49 +20,14 @@ class SimCSE(object):
         self.args = kwargs['args']
         self.model = kwargs['model'].to(self.args.device)
         self.optimizer = kwargs['optimizer']
-        self.scheduler = kwargs['scheduler']
-        # self.tokenizer = kwargs['tokenizer']
 
-        import socket
-        from datetime import datetime
-        current_time = datetime.now().strftime('%b%d_%H-%M-%S')
-        log_dir = os.path.join('runs', current_time)
+        os.makedirs(self.args.output_path, exist_ok=True)
+        log_dir = self.args.output_path
         if not os.path.exists(log_dir):
             os.makedirs(log_dir, exist_ok=True)
         self.writer = SummaryWriter(log_dir=log_dir)
 
         logging.basicConfig(filename=os.path.join(self.writer.log_dir, 'training.log'), level=logging.DEBUG)
-        # self.criterion = torch.nn.CrossEntropyLoss().to(self.args.device)
-
-    def info_nce_loss(self, features):
-        labels = torch.cat([torch.arange(self.args.batch_size) for i in range(self.args.n_views)], dim=0)
-        labels = (labels.unsqueeze(0) == labels.unsqueeze(1)).float()
-        labels = labels.to(self.args.device)
-
-        # features = F.normalize(features, dim=1)
-        fea_anchor = features[1:-3:3]
-        fea_positive = features[2:-2:3]
-        fea_negative = features[3:-1:3]
-
-        similarity_matrix = torch.matmul(fea_anchor, fea_positive.T)
-
-        # discard the main diagonal from both: labels and similarities matrix
-        mask = torch.eye(labels.shape[0], dtype=torch.bool).to(self.args.device)
-        labels = labels[~mask].view(labels.shape[0], -1)
-        similarity_matrix = similarity_matrix[~mask].view(similarity_matrix.shape[0], -1)
-        # assert similarity_matrix.shape == labels.shape
-
-        # select and combine multiple positives
-        positives = similarity_matrix[labels.bool()].view(labels.shape[0], -1)
-
-        # select only the negatives the negatives
-        negatives = similarity_matrix[~labels.bool()].view(similarity_matrix.shape[0], -1)
-
-        logits = torch.cat([positives, negatives], dim=1)
-        labels = torch.zeros(logits.shape[0], dtype=torch.long).to(self.args.device)
-
-        logits = logits / self.args.temperature
-        return logits, labels
 
     def simcse_unsup_loss(self, y_pred: 'tensor') -> 'tensor':
         """
@@ -101,158 +68,89 @@ class SimCSE(object):
 
         return logits, labels
 
-    def model_forward(self, input_ids, attention_mask, token_type_ids):
-
-        # out = self.bert(input_ids, attention_mask, token_type_ids)
-        out = self.model(input_ids, attention_mask, token_type_ids, output_hidden_states=True)
-        '''
-        Pooling 
-        last_hidden_state (torch.FloatTensor of shape (batch_size, sequence_length, hidden_size)) 
-        — Sequence of hidden-states at the output of the last layer of the model.
-        
-        pooler_output (torch.FloatTensor of shape (batch_size, hidden_size)) 
-        — Last layer hidden-state of the first token of the sequence (classification token) after 
-        further processing through the layers used for the auxiliary pretraining task. E.g. for 
-        BERT-family of models, this returns the classification token after processing through a 
-        linear layer and a tanh activation function. The linear layer weights are trained from the 
-        next sentence prediction (classification) objective during pretraining.
-        
-        hidden_states (tuple(torch.FloatTensor), optional, returned when output_hidden_states=True 
-        is passed or when config.output_hidden_states=True) 
-        — Tuple of torch.FloatTensor (one for the output of the embeddings, if the model has an 
-        embedding layer, + one for the output of each layer) of shape (batch_size, sequence_length, hidden_size).
-        
-        Hidden-states of the model at the output of each layer plus the optional initial embedding outputs.
-
-        attentions (tuple(torch.FloatTensor), optional, returned when output_attentions=True is 
-        passed or when config.output_attentions=True) 
-        — Tuple of torch.FloatTensor (one for each layer) of shape (batch_size, num_heads, 
-        sequence_length, sequence_length).
-        
-        Attentions weights after the attention softmax, used to compute the weighted average in 
-        the self-attention heads.
-        '''
-        if self.args.pooling == 'cls':
-            return out.last_hidden_state[:, 0]  # [batch, 768]
-
-        if self.args.pooling == 'pooler':
-            return out.pooler_output  # [batch, 768]
-
-        if self.args.pooling == 'last-avg':
-            last = out.last_hidden_state.transpose(1, 2)  # [batch, 768, seqlen]
-            return torch.avg_pool1d(last, kernel_size=last.shape[-1]).squeeze(-1)  # [batch, 768]
-
-        if self.args.pooling == 'first-last-avg':
-            first = out.hidden_states[1].transpose(1, 2)  # [batch, 768, seqlen]
-            last = out.hidden_states[-1].transpose(1, 2)  # [batch, 768, seqlen]
-            first_avg = torch.avg_pool1d(first, kernel_size=last.shape[-1]).squeeze(-1)  # [batch, 768]
-            last_avg = torch.avg_pool1d(last, kernel_size=last.shape[-1]).squeeze(-1)  # [batch, 768]
-            avg = torch.cat((first_avg.unsqueeze(1), last_avg.unsqueeze(1)), dim=1)  # [batch, 2, 768]
-            return torch.avg_pool1d(avg.transpose(1, 2), kernel_size=2).squeeze(-1)  # [batch, 768]
-
-    def train_sup(self, train_loader):
-        n_iter = 0
+    def train(self, train_loader, eval_loader):
+        logger.info("start training")
         self.model.train()
-
+        device = self.args.device
+        best = 0
         scaler = GradScaler(enabled=self.args.fp16_precision)
-
-        # save config file
         save_config_file(self.writer.log_dir, self.args)
 
         logging.info(f"Start SimCSE training for {self.args.epochs} epochs.")
         logging.info(f"Training with gpu: {self.args.disable_cuda}.")
 
         for epoch in range(self.args.epochs):
-            print(f"Start training epoch {epoch + 1}  ----------------")
-            for batch_idx, source in enumerate(tqdm(train_loader, total=len(train_loader)), start=1):
+            print(epoch)
+            for batch_idx, data in enumerate(tqdm(train_loader)):
+                step = epoch * len(train_loader) + batch_idx
+                # [batch, n, seq_len] -> [batch * n, sql_len]
+                if self.args.arch == 'roberta':
+                    sql_len = data['input_ids'].shape[-1]
+                    input_ids = data['input_ids'].view(-1, sql_len).to(device)
+                    attention_mask = data['attention_mask'].view(-1, sql_len).to(device)
+                    token_type_ids = None
+                elif self.args.arch == 'bert':
+                    sql_len = data['input_ids'].shape[-1]
+                    input_ids = data['input_ids'].view(-1, sql_len).to(device)
+                    attention_mask = data['attention_mask'].view(-1, sql_len).to(device)
+                    token_type_ids = data['token_type_ids'].view(-1, sql_len).to(device)
+                else:
+                    raise ValueError("Unsupported pretrained model")
 
-                real_batch_num = source.get('input_ids').shape[0]
-                input_ids = source.get('input_ids').view(real_batch_num * 3, -1).to(self.args.device)
-                attention_mask = source.get('attention_mask').view(real_batch_num * 3, -1).to(self.args.device)
-                token_type_ids = source.get('token_type_ids').view(real_batch_num * 3, -1).to(self.args.device)
-
-                with autocast(enabled=self.args.fp16_precision):
-                    out = self.model_forward(input_ids, attention_mask, token_type_ids)
-                    logits, labels = self.simcse_sup_loss(out)
-                    loss = F.cross_entropy(logits, labels)
-
-                self.optimizer.zero_grad()
-                scaler.scale(loss).backward()
-                scaler.step(self.optimizer)
-                scaler.update()
-
-                self.scheduler.step()
-
-                if n_iter % self.args.log_every_n_steps == 0:
-                    top1, top5 = accuracy(logits, labels, topk=(1, 5))
-                    self.writer.add_scalar('loss', loss, global_step=n_iter)
-                    self.writer.add_scalar('acc/top1', top1[0], global_step=n_iter)
-                    self.writer.add_scalar('acc/top5', top5[0], global_step=n_iter)
-                    self.writer.add_scalar('learning_rate', self.scheduler.get_last_lr()[0], global_step=n_iter)
-                    logging.debug(f"Epoch: {epoch}\tLoss: {loss}\tTop1 accuracy: {top1[0]}")
-
-                n_iter += 1
-
-        if self.args.save_data:
-            logging.info("Training has finished.")
-            # save model checkpoints
-            checkpoint_name = 'checkpoint'.format(self.args.epochs)
-            self.model.save_pretrained(os.path.join(self.writer.log_dir, checkpoint_name))
-            logging.info(f"Model checkpoint and metadata has been saved at {self.writer.log_dir}.")
-        else:
-            logging.info(f"Model is trained but the checkpoint and metadata has not been save.")
-
-    def train_unsup(self, train_loader):
-        n_iter = 0
-        self.model.train()
-
-        scaler = GradScaler(enabled=self.args.fp16_precision)
-
-        # save config file
-        save_config_file(self.writer.log_dir, self.args)
-
-        logging.info(f"Start SimCSE training for {self.args.epochs} epochs.")
-        logging.info(f"Training with gpu: {self.args.disable_cuda}.")
-
-        for epoch in range(self.args.epochs):
-            print(f"Start training epoch {epoch+1}  ----------------")
-            for batch_idx, source in enumerate(tqdm(train_loader, total=len(train_loader)), start=1):
-
-                real_batch_num = source.get('input_ids').shape[0]
-                input_ids = source.get('input_ids').view(real_batch_num * 2, -1).to(self.args.device)
-                attention_mask = source.get('attention_mask').view(real_batch_num * 2, -1).to(self.args.device)
-                token_type_ids = source.get('token_type_ids').view(real_batch_num * 2, -1).to(self.args.device)
-
-                with autocast(enabled=self.args.fp16_precision):
-                    out = self.model_forward(input_ids, attention_mask, token_type_ids)
+                out = self.model(input_ids, attention_mask, token_type_ids)
+                if self.args.mode == 'unsup':
                     logits, labels = self.simcse_unsup_loss(out)
-                    loss = F.cross_entropy(logits, labels)
-
+                else:
+                    logits, labels = self.simcse_sup_loss(out)
+                loss = F.cross_entropy(logits, labels)
                 self.optimizer.zero_grad()
-                scaler.scale(loss).backward()
-                scaler.step(self.optimizer)
-                scaler.update()
+                loss.backward()
+                self.optimizer.step()
+                step += 1
 
-                self.scheduler.step()
-
-                if n_iter % self.args.log_every_n_steps == 0:
+                if step % self.args.log_every_n_steps == 0:
                     top1, top5 = accuracy(logits, labels, topk=(1, 5))
-                    self.writer.add_scalar('loss', loss, global_step=n_iter)
-                    self.writer.add_scalar('acc/top1', top1[0], global_step=n_iter)
-                    self.writer.add_scalar('acc/top5', top5[0], global_step=n_iter)
-                    self.writer.add_scalar('learning_rate', self.scheduler.get_last_lr()[0], global_step=n_iter)
-                    logging.debug(f"Epoch: {epoch}\tLoss: {loss}\tTop1 accuracy: {top1[0]}")
+                    corrcoef = self.evaluate(model=self.model, dataloader=eval_loader)
+                    logger.info('loss:{}, corrcoef: {}'.format(loss, corrcoef))
+                    logging.debug(f"Epoch: {epoch}\tLoss: {loss}\tcorrcoef: {corrcoef}\tTop1 accuracy: {top1[0]}")
+                    if best < corrcoef:
+                        best = corrcoef
+                        if self.args.save_data:
+                            torch.save(self.model.state_dict(), os.path.join(self.args.output_path, 'simcse.pt'))
+                            # checkpoint_name = 'checkpoint_best'.format(self.args.epochs)
+                            # self.model.save_pretrained(os.path.join(self.writer.log_dir, checkpoint_name))
+                        logger.info('higher corrcoef: {}'.format(best))
 
-                n_iter += 1
+    def evaluate(self, model, dataloader):
+        model.eval()
+        sim_tensor = torch.tensor([], device=self.args.device)
+        label_array = np.array([])
+        with torch.no_grad():
+            for source, target, label in dataloader:
+                # source        [batch, 1, seq_len] -> [batch, seq_len]
+                source_input_ids = source.get('input_ids').squeeze(1).to(self.args.device)
+                source_attention_mask = source.get('attention_mask').squeeze(1).to(self.args.device)
+                if self.args.arch == 'roberta':
+                    source_pred = model(source_input_ids, source_attention_mask)
+                elif self.args.arch == 'bert':
+                    source_token_type_ids = source.get('token_type_ids').squeeze(1).to(self.args.device)
+                    source_pred = model(source_input_ids, source_attention_mask, source_token_type_ids)
+                else:
+                    raise ValueError
+                # target        [batch, 1, seq_len] -> [batch, seq_len]
+                target_input_ids = target.get('input_ids').squeeze(1).to(self.args.device)
+                target_attention_mask = target.get('attention_mask').squeeze(1).to(self.args.device)
+                if self.args.arch == 'roberta':
+                    target_pred = model(source_input_ids, source_attention_mask)
+                elif self.args.arch == 'bert':
+                    target_token_type_ids = target.get('token_type_ids').squeeze(1).to(self.args.device)
+                    target_pred = model(target_input_ids, target_attention_mask, target_token_type_ids)
+                else:
+                    raise ValueError
 
-        if self.args.save_data:
-            logging.info("Training has finished.")
-            # save model checkpoints
-            checkpoint_name = 'checkpoint'.format(self.args.epochs)
-            self.model.save_pretrained(os.path.join(self.writer.log_dir, checkpoint_name))
-            logging.info(f"Model checkpoint and metadata has been saved at {self.writer.log_dir}.")
-        else:
-            logging.info(f"Model is trained but the checkpoint and metadata has not been save.")
-
-
-
+                # concat
+                sim = F.cosine_similarity(source_pred, target_pred, dim=-1)
+                sim_tensor = torch.cat((sim_tensor, sim), dim=0)
+                label_array = np.append(label_array, np.array(label))
+        # corrcoef
+        return spearmanr(label_array, sim_tensor.cpu().numpy()).correlation
