@@ -5,6 +5,8 @@ pandas
 scikit-learn
 prettytable
 gradio
+nltk
 torch
+torchtext
 setuptools
 tensorboard

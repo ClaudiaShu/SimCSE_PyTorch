@@ -5,10 +5,13 @@ import os
 import numpy as np
 import torch
 import torch.nn.functional as F
+from matplotlib import pyplot as plt
 from scipy.stats import spearmanr
 from torch.cuda.amp import GradScaler, autocast
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+
+
 from utils import save_config_file, accuracy, save_checkpoint
 
 '''
@@ -20,6 +23,7 @@ class SimCSE(object):
         self.args = kwargs['args']
         self.model = kwargs['model'].to(self.args.device)
         self.optimizer = kwargs['optimizer']
+        self.scheduler = kwargs['scheduler']
 
         os.makedirs(self.args.output_path, exist_ok=True)
         log_dir = self.args.output_path
@@ -79,10 +83,15 @@ class SimCSE(object):
         logging.info(f"Start SimCSE training for {self.args.epochs} epochs.")
         logging.info(f"Training with gpu: {self.args.disable_cuda}.")
 
+        lr = []
+        loss = 0
+
         for epoch in range(self.args.epochs):
             print(epoch)
-            for batch_idx, data in enumerate(tqdm(train_loader)):
+            pbar = tqdm(train_loader)
+            for batch_idx, data in enumerate(pbar):
                 step = epoch * len(train_loader) + batch_idx
+                pbar.set_description(f"step: {step} | Loss: {loss}")
                 # [batch, n, seq_len] -> [batch * n, sql_len]
                 if self.args.arch == 'roberta':
                     sql_len = data['input_ids'].shape[-1]
@@ -104,8 +113,9 @@ class SimCSE(object):
                     logits, labels = self.simcse_sup_loss(out)
                 loss = F.cross_entropy(logits, labels)
                 self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
+                scaler.scale(loss).backward()
+                scaler.step(self.optimizer)
+                scaler.update()
                 step += 1
 
                 if step % self.args.log_every_n_steps == 0:
@@ -116,10 +126,19 @@ class SimCSE(object):
                     if best < corrcoef:
                         best = corrcoef
                         if self.args.save_data:
-                            torch.save(self.model.state_dict(), os.path.join(self.args.output_path, 'simcse.pt'))
-                            # checkpoint_name = 'checkpoint_best'.format(self.args.epochs)
-                            # self.model.save_pretrained(os.path.join(self.writer.log_dir, checkpoint_name))
+                            # torch.save(self.model.state_dict(), os.path.join(self.args.output_path, 'simcse.pt'))
+                            checkpoint_name = 'checkpoint_best'
+                            self.model.save_pretrained(os.path.join(self.writer.log_dir, checkpoint_name))
                         logger.info('higher corrcoef: {}'.format(best))
+
+                if step >= 100:
+                    self.scheduler.step(step)
+                lr.append(self.scheduler.get_lr()[0])
+
+            lr_x = np.array(lr)
+
+            plt.plot(lr_x)
+            plt.show()
 
     def evaluate(self, model, dataloader):
         model.eval()

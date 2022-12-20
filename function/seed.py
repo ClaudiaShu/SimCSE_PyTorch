@@ -3,6 +3,7 @@ import random
 
 import numpy as np
 import torch
+import seaborn as sns
 
 
 def seed_everything(seed=42):
@@ -20,3 +21,4 @@ def seed_everything(seed=42):
     # some cudnn methods can be random even after fixing the seed
     # unless you tell it to be deterministic
     torch.backends.cudnn.deterministic = True
+

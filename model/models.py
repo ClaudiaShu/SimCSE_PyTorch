@@ -35,9 +35,9 @@ class SimcseModelUnsup(nn.Module):
 
     def forward(self, input_ids, attention_mask, token_type_ids=None, output_hidden_states=True):
         if self.args.arch == 'roberta':
-            out = self.model(input_ids, attention_mask, output_hidden_states=output_hidden_states)
+            out = self.model(input_ids, attention_mask, output_hidden_states=output_hidden_states, return_dict=True)
         else:
-            out = self.model(input_ids, attention_mask, token_type_ids, output_hidden_states=output_hidden_states)
+            out = self.model(input_ids, attention_mask, token_type_ids, output_hidden_states=output_hidden_states, return_dict=True)
 
         if self.args.pooling == 'cls':
             return out.last_hidden_state[:, 0]  # [batch, 768]
@@ -84,4 +84,3 @@ class SimcseModelUnsup(nn.Module):
             the self-attention heads.
         '''
 
-        return out
