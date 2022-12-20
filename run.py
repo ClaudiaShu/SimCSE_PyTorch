@@ -34,7 +34,7 @@ parser.add_argument("--max_len", default=64, type=int, help="Set up the maximum 
 parser.add_argument("--pooling", choices=['cls', 'pooler', 'last-avg', 'first-last-avg'], default='cls', type=str, help='Choose the pooling method')
 parser.add_argument("--temperature", default=0.05, type=float, help="Set uo the temperature parameter.")
 parser.add_argument("--dropout", default = 0.3, type=float, help="Set up the dropout ratio")
-parser.add_argument("--pretrained_model", default="bert-base-uncased", type = str)
+parser.add_argument("--pretrained_model", default="roberta-base", type = str)
 parser.add_argument("--num_workers",default=4, type=int)
 # princeton-nlp/sup-simcse-bert-base-uncased
 # princeton-nlp/unsup-simcse-roberta-base
@@ -42,11 +42,11 @@ parser.add_argument("--num_workers",default=4, type=int)
 # roberta-base
 
 # Augmentation
-parser.add_argument("--num_aug", default=1, required=False, type=int, help="number of augmented sentences per original sentence")
-parser.add_argument("--alpha_sr", default=0.05, required=False, type=float, help="percent of words in each sentence to be replaced by synonyms")
-parser.add_argument("--alpha_ri", default=0.0, required=False, type=float, help="percent of words in each sentence to be inserted")
-parser.add_argument("--alpha_rs", default=0.0, required=False, type=float, help="percent of words in each sentence to be swapped")
-parser.add_argument("--alpha_rd", default=0.0, required=False, type=float, help="percent of words in each sentence to be deleted")
+parser.add_argument("--num_aug", default=0, type=int, help="number of augmented sentences per original sentence")
+parser.add_argument("--alpha_sr", default=0.0, type=float, help="percent of words in each sentence to be replaced by synonyms")
+parser.add_argument("--alpha_ri", default=0.0, type=float, help="percent of words in each sentence to be inserted")
+parser.add_argument("--alpha_rs", default=0.0, type=float, help="percent of words in each sentence to be swapped")
+parser.add_argument("--alpha_rd", default=0.0, type=float, help="percent of words in each sentence to be deleted")
 # Additional HP
 parser.add_argument("--seed", default=42, type=int)
 parser.add_argument("--weight_decay", default=5e-4, type=float, help="Set up the weight decay for optimizer.")
@@ -58,7 +58,7 @@ parser.add_argument("--train_data", type=str, default="./data/training/wiki1m_fo
 parser.add_argument("--dev_file", type=str, default="data/stsbenchmark/sts-dev.csv")
 parser.add_argument("--test_file", type=str, default="data/stsbenchmark/sts-test.csv")
 parser.add_argument("--save_data", default=True)
-parser.add_argument("--output_path", default='test')
+parser.add_argument("--output_path")  # , default='test'
 # GPU
 parser.add_argument('--gpu-index', default=0, type=int, help='Gpu index.')
 
@@ -127,6 +127,7 @@ def main():
             simcse.train(train_loader=train_loader, eval_loader=eval_loader)
         if args.do_test:
             model.load_state_dict(torch.load(os.path.join(args.output_path, 'simcse.pt')))
+            # model.load_state_dict(torch.load("/media/storage/yuxuan/software/SimCSE/results/unsup/Dec20_17-25-14/simcse.pt"))
             model.eval()
             corrcoef = simcse.evaluate(model=model, dataloader=test_dataloader)
             print('corrcoef: {}'.format(corrcoef))

@@ -107,18 +107,46 @@ class AugmentTrainDataset(Dataset):
             sent0 = text[self.column_names[0]]
             sent1 = text[self.column_names[1]]
             sent2 = text[self.column_names[2]]
+            return self.tokenizer([sent0, sent1, sent2],
+                                  max_length=self.args.max_len,
+                                  truncation=True,
+                                  padding="max_length",
+                                  return_tensors='pt')
+        elif len(self.column_names) == 2:
+            sent0 = text[self.column_names[0]]
+            sent1 = text[self.column_names[1]]
+            return self.tokenizer([sent0, sent1],
+                                  max_length=self.args.max_len,
+                                  truncation=True,
+                                  padding="max_length",
+                                  return_tensors='pt')
+        elif len(self.column_names) == 1:
+            sent0 = text[self.column_names[0]]
+            return self.tokenizer([sent0, sent0],
+                                  max_length=self.args.max_len,
+                                  truncation=True,
+                                  padding="max_length",
+                                  return_tensors='pt')
+        else:
+            raise ValueError("Mismatch in input dimension.")
+
+    def text_2_aug(self, text: str):
+        if len(self.column_names) == 3:
+            sent0 = self.get_eda_augment(text[self.column_names[0]])
+            sent1 = self.get_eda_augment(text[self.column_names[1]])
+            sent2 = self.get_eda_augment(text[self.column_names[2]])
             try:
-                sent_anc = sent0[1]
+                sent_anc = sent0[0]
             except:
                 sent_anc = sent0
 
             try:
-                sent_pos = sent1[1]
+                sent_pos = sent1[0]
             except:
                 sent_pos = sent1
 
             try:
-                sent_neg = sent2[1]
+                sent_neg = sent2[0]
             except:
                 sent_neg = sent2
 
@@ -128,8 +156,8 @@ class AugmentTrainDataset(Dataset):
                                   padding="max_length",
                                   return_tensors='pt')
         elif len(self.column_names) == 2:
-            sent0 = text[self.column_names[0]]
-            sent1 = text[self.column_names[1]]
+            sent0 = self.get_eda_augment(text[self.column_names[0]])
+            sent1 = self.get_eda_augment(text[self.column_names[1]])
             if isinstance(sent0, list) and isinstance(sent1, list):
                 sent_anc = sent0[0]
                 sent_pos = sent1[0]
@@ -167,7 +195,10 @@ class AugmentTrainDataset(Dataset):
             raise ValueError("Mismatch in input dimension.")
 
     def __getitem__(self, index: int):
-        return self.text_2_id(self.data['train'][index])
+        if self.args.num_aug == 0:
+            return self.text_2_id(self.data['train'][index])
+        else:
+            return self.text_2_aug(self.data['train'][index])
 
 class SimcseEvalDataset(Dataset):
     def __init__(self, *args, **kwargs):

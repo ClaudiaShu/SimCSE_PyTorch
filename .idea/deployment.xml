@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" remoteFilesAllowedToDisappearOnAutoupload="false">
+  <component name="PublishConfigData" autoUpload="Always" serverName="yuxuashu@localhost:6000" remoteFilesAllowedToDisappearOnAutoupload="false">
     <serverData>
       <paths name="BYOL">
         <serverdata>
@@ -51,6 +51,14 @@
           </mappings>
         </serverdata>
       </paths>
+      <paths name="yuxuashu@localhost:6000">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/media/storage/yuxuan/software/SimCSE" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
     </serverData>
+    <option name="myAutoUpload" value="ALWAYS" />
   </component>
 </project>

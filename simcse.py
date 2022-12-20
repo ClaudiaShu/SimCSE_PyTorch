@@ -25,13 +25,18 @@ class SimCSE(object):
         self.optimizer = kwargs['optimizer']
         self.scheduler = kwargs['scheduler']
 
-        os.makedirs(self.args.output_path, exist_ok=True)
-        log_dir = self.args.output_path
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir, exist_ok=True)
-        self.writer = SummaryWriter(log_dir=log_dir)
+        if self.args.do_train:
+            os.makedirs(self.args.output_path, exist_ok=True)
+            log_dir = self.args.output_path
+            if not os.path.exists(log_dir):
+                os.makedirs(log_dir, exist_ok=True)
+            self.writer = SummaryWriter(log_dir=log_dir)
 
-        logging.basicConfig(filename=os.path.join(self.writer.log_dir, 'training.log'), level=logging.DEBUG)
+            logging.basicConfig(filename=os.path.join(self.writer.log_dir, 'training.log'), level=logging.DEBUG)
+        else:
+            pass
+
+
 
     def simcse_unsup_loss(self, y_pred: 'tensor') -> 'tensor':
         """
@@ -126,9 +131,9 @@ class SimCSE(object):
                     if best < corrcoef:
                         best = corrcoef
                         if self.args.save_data:
-                            # torch.save(self.model.state_dict(), os.path.join(self.args.output_path, 'simcse.pt'))
+                            torch.save(self.model.state_dict(), os.path.join(self.args.output_path, 'simcse.pt'))
                             checkpoint_name = 'checkpoint_best'
-                            self.model.save_pretrained(os.path.join(self.writer.log_dir, checkpoint_name))
+                            self.model.model.save_pretrained(os.path.join(self.writer.log_dir, checkpoint_name))
                         logger.info('higher corrcoef: {}'.format(best))
 
                 if step >= 100:
