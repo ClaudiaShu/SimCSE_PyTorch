@@ -1,7 +1,5 @@
 import argparse
-from loguru import logger
 
-import torch
 from torch.backends import cudnn
 from torch.utils.data import DataLoader
 from transformers import AutoTokenizer,  utils
