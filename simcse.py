@@ -135,7 +135,6 @@ class SimCSE(object):
                             self.model.model.save_pretrained(os.path.join(self.writer.log_dir, checkpoint_name))
                         logger.info('higher corrcoef: {}'.format(best))
 
-
         logging.debug(f"Best corrcoef {best} at step: {best_step}")
 
 
