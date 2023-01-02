@@ -36,8 +36,6 @@ class SimCSE(object):
         else:
             pass
 
-
-
     def simcse_unsup_loss(self, y_pred: 'tensor') -> 'tensor':
         """
         loss function for self-supervised training
@@ -82,31 +80,27 @@ class SimCSE(object):
         self.model.train()
         device = self.args.device
         best = 0
+        best_step = 0
+        loss = 0
+
         scaler = GradScaler(enabled=self.args.fp16_precision)
         save_config_file(self.writer.log_dir, self.args)
 
         logging.info(f"Start SimCSE training for {self.args.epochs} epochs.")
         logging.info(f"Training with gpu: {self.args.disable_cuda}.")
 
-        lr = []
-        loss = 0
-
         for epoch in range(self.args.epochs):
-            print(epoch)
             pbar = tqdm(train_loader)
             for batch_idx, data in enumerate(pbar):
                 step = epoch * len(train_loader) + batch_idx
                 pbar.set_description(f"step: {step} | Loss: {loss}")
                 # [batch, n, seq_len] -> [batch * n, sql_len]
+                sql_len = data['input_ids'].shape[-1]
+                input_ids = data['input_ids'].view(-1, sql_len).to(device)
+                attention_mask = data['attention_mask'].view(-1, sql_len).to(device)
                 if self.args.arch == 'roberta':
-                    sql_len = data['input_ids'].shape[-1]
-                    input_ids = data['input_ids'].view(-1, sql_len).to(device)
-                    attention_mask = data['attention_mask'].view(-1, sql_len).to(device)
                     token_type_ids = None
                 elif self.args.arch == 'bert':
-                    sql_len = data['input_ids'].shape[-1]
-                    input_ids = data['input_ids'].view(-1, sql_len).to(device)
-                    attention_mask = data['attention_mask'].view(-1, sql_len).to(device)
                     token_type_ids = data['token_type_ids'].view(-1, sql_len).to(device)
                 else:
                     raise ValueError("Unsupported pretrained model")
@@ -122,28 +116,28 @@ class SimCSE(object):
                 scaler.step(self.optimizer)
                 scaler.update()
                 step += 1
+                self.scheduler.step()
 
                 if step % self.args.log_every_n_steps == 0:
-                    top1, top5 = accuracy(logits, labels, topk=(1, 5))
                     corrcoef = self.evaluate(model=self.model, dataloader=eval_loader)
-                    logger.info('loss:{}, corrcoef: {}'.format(loss, corrcoef))
-                    logging.debug(f"Epoch: {epoch}\tLoss: {loss}\tcorrcoef: {corrcoef}\tTop1 accuracy: {top1[0]}")
+                    logger.info(f'loss:{loss}, corrcoef: {corrcoef} in step {step} epoch {epoch}')
+                    logging.debug(f"Epoch: {epoch}\tStep: {step}\tLoss: {loss}\tcorrcoef: {corrcoef}\tBest score {best} at step: {best_step}")
+                    self.writer.add_scalar('loss', loss, step)
+                    self.writer.add_scalar('corrcoef', corrcoef, step)
+                    self.model.train()
+
                     if best < corrcoef:
                         best = corrcoef
+                        best_step = step
                         if self.args.save_data:
                             torch.save(self.model.state_dict(), os.path.join(self.args.output_path, 'simcse.pt'))
                             checkpoint_name = 'checkpoint_best'
                             self.model.model.save_pretrained(os.path.join(self.writer.log_dir, checkpoint_name))
                         logger.info('higher corrcoef: {}'.format(best))
 
-                if step >= 100:
-                    self.scheduler.step(step)
-                lr.append(self.scheduler.get_lr()[0])
 
-            lr_x = np.array(lr)
+        logging.debug(f"Best corrcoef {best} at step: {best_step}")
 
-            plt.plot(lr_x)
-            plt.show()
 
     def evaluate(self, model, dataloader):
         model.eval()

@@ -59,7 +59,7 @@ def print_table(task_names, scores):
 def nlp_eval(args):
 
     # Load transformers' model checkpoint
-    model_file = "/media/storage/yuxuan/software/SimCSE/results/unsup/Dec20_20-31-25/checkpoint_best/"
+    model_file = "/media/storage/yuxuan/software/SimCSE/results/unsup/Dec21_01-10-15/checkpoint_best/"
     model = AutoModel.from_pretrained(model_file)
     # model = AutoModel.from_pretrained(args.model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)

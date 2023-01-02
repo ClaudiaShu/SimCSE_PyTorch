@@ -1,4 +1,5 @@
 import argparse
+from loguru import logger
 
 import torch
 from torch.backends import cudnn
@@ -7,6 +8,7 @@ from transformers import AutoTokenizer,  utils
 
 from data.dataset import SimcseEvalDataset, SimcseTrainDataset, AugmentTrainDataset
 from function.seed import seed_everything
+from model.lambda_scheduler import *
 from model.models import SimcseModelUnsup
 from simcse import SimCSE
 
@@ -29,12 +31,13 @@ parser.add_argument('--do_test', default=True)
 # Parameters
 parser.add_argument("--epochs", default=3, type=int, help="Set up the number of epochs you want to train.")
 parser.add_argument("--batch_size", default=64, type=int, help="Set up the size of each batch you want to train.")
+parser.add_argument("--batch_size_eval", default=256, type=int, help="Set up the size of each batch you want to evaluate.")
 parser.add_argument("--lr", default=3e-5, type=float, help="Set up the learning rate.")
 parser.add_argument("--max_len", default=64, type=int, help="Set up the maximum total input sequence length after tokenization.")
 parser.add_argument("--pooling", choices=['cls', 'pooler', 'last-avg', 'first-last-avg'], default='cls', type=str, help='Choose the pooling method')
 parser.add_argument("--temperature", default=0.05, type=float, help="Set uo the temperature parameter.")
-parser.add_argument("--dropout", default = 0.3, type=float, help="Set up the dropout ratio")
-parser.add_argument("--pretrained_model", default="roberta-base", type = str)
+parser.add_argument("--dropout", default = 0.1, type=float, help="Set up the dropout ratio")
+parser.add_argument("--pretrained_model", default="bert-base-uncased", type = str)
 parser.add_argument("--num_workers",default=4, type=int)
 # princeton-nlp/sup-simcse-bert-base-uncased
 # princeton-nlp/unsup-simcse-roberta-base
@@ -42,9 +45,9 @@ parser.add_argument("--num_workers",default=4, type=int)
 # roberta-base
 
 # Augmentation
-parser.add_argument("--num_aug", default=0, type=int, help="number of augmented sentences per original sentence")
+parser.add_argument("--num_aug", default=1, type=int, help="number of augmented sentences per original sentence")
 parser.add_argument("--alpha_sr", default=0.0, type=float, help="percent of words in each sentence to be replaced by synonyms")
-parser.add_argument("--alpha_ri", default=0.0, type=float, help="percent of words in each sentence to be inserted")
+parser.add_argument("--alpha_ri", default=0.05, type=float, help="percent of words in each sentence to be inserted")
 parser.add_argument("--alpha_rs", default=0.0, type=float, help="percent of words in each sentence to be swapped")
 parser.add_argument("--alpha_rd", default=0.0, type=float, help="percent of words in each sentence to be deleted")
 # Additional HP
@@ -57,8 +60,11 @@ parser.add_argument("--train_data", type=str, default="./data/training/wiki1m_fo
                     help="Choose the dataset you want to train with.")  # wiki1m_for_simcse.txt; nli_for_simcse.csv
 parser.add_argument("--dev_file", type=str, default="data/stsbenchmark/sts-dev.csv")
 parser.add_argument("--test_file", type=str, default="data/stsbenchmark/sts-test.csv")
+parser.add_argument("--test_model")  # only evaluate other model when do_train is false
+# Save model and define the output path. If the output is not none, the result is saved to result file by default.
 parser.add_argument("--save_data", default=True)
-parser.add_argument("--output_path")  # , default='test'
+parser.add_argument("--output_path", default='test')  # , default='test'
+
 # GPU
 parser.add_argument('--gpu-index', default=0, type=int, help='Gpu index.')
 
@@ -93,7 +99,10 @@ def main():
     model = model.to(args.device)
 
     # Load dataset
-    train_dataset = AugmentTrainDataset(args=args, data=args.train_data, tokenizer=tokenizer)
+    if args.num_aug == 0:
+        train_dataset = SimcseTrainDataset(args=args, data=args.train_data, tokenizer=tokenizer)
+    else:
+        train_dataset = AugmentTrainDataset(args=args, data=args.train_data, tokenizer=tokenizer)
     train_loader = DataLoader(train_dataset,
                               batch_size=args.batch_size,
                               num_workers=args.num_workers,
@@ -102,32 +111,33 @@ def main():
 
     eval_dataset = SimcseEvalDataset(args=args, eval_mode='eval', tokenizer=tokenizer)
     eval_loader = DataLoader(eval_dataset,
-                             batch_size=args.batch_size,
+                             batch_size=args.batch_size_eval,
                              num_workers=args.num_workers,
                              shuffle=True,
                              pin_memory=False)
 
     test_dataset = SimcseEvalDataset(args=args, eval_mode='test', tokenizer=tokenizer)
     test_dataloader = DataLoader(test_dataset,
-                                 batch_size=args.batch_size,
+                                 batch_size=args.batch_size_eval,
                                  num_workers=args.num_workers,
                                  shuffle=True,
                                  pin_memory=False)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
-    # optimizer = torch.optim.Adam(model.parameters(), args.lr, weight_decay=args.weight_decay)
-    # optimizer = torch.optim.SGD(model.parameters(), lr=args.lr)
 
-    # scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=len(train_loader), eta_min=0, last_epoch=-1)
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=int(len(train_loader)/100), gamma=0.1)
+    scheduler = get_constant_schedule(optimizer)
+    # scheduler = get_linear_schedule_with_warmup(optimizer=optimizer, num_warmup_steps=100,
+    #                                             num_training_steps=int(len(train_loader)), last_epoch=-1)
 
     with torch.cuda.device(args.gpu_index):
         simcse = SimCSE(args=args, model=model, optimizer=optimizer, scheduler=scheduler)
         if args.do_train:
             simcse.train(train_loader=train_loader, eval_loader=eval_loader)
         if args.do_test:
-            model.load_state_dict(torch.load(os.path.join(args.output_path, 'simcse.pt')))
-            # model.load_state_dict(torch.load("/media/storage/yuxuan/software/SimCSE/results/unsup/Dec20_17-25-14/simcse.pt"))
+            try:
+                model.load_state_dict(torch.load(os.path.join(args.output_path, 'simcse.pt')))
+            except:
+                model.load_state_dict(torch.load(os.path.join(args.test_model, 'simcse.pt')))
             model.eval()
             corrcoef = simcse.evaluate(model=model, dataloader=test_dataloader)
             print('corrcoef: {}'.format(corrcoef))
