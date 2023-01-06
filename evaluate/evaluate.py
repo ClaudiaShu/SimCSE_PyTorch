@@ -14,8 +14,8 @@ import senteval
 logging.basicConfig(format='%(asctime)s : %(message)s', level=logging.DEBUG)
 
 # Set PATHs
-PATH_TO_SENTEVAL = './senteval'
-PATH_TO_DATA = './data'
+PATH_TO_SENTEVAL = '../senteval'
+PATH_TO_DATA = '../data'
 
 # Import SentEval
 sys.path.insert(0, PATH_TO_SENTEVAL)
@@ -59,7 +59,7 @@ def print_table(task_names, scores):
 def nlp_eval(args):
 
     # Load transformers' model checkpoint
-    model_file = "/media/storage/yuxuan/software/SimCSE/results/unsup/Dec21_01-10-15/checkpoint_best/"
+    model_file = "/media/storage/yuxuan/software/SimCSE/results/unsup/Dec30_14-49-00/checkpoint_best/"
     model = AutoModel.from_pretrained(model_file)
     # model = AutoModel.from_pretrained(args.model_name_or_path)
     tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path)

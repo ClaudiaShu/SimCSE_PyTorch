@@ -2,7 +2,7 @@ import argparse
 
 from torch.backends import cudnn
 from torch.utils.data import DataLoader
-from transformers import AutoTokenizer,  utils
+from transformers import AutoTokenizer, utils
 
 from data.dataset import SimcseEvalDataset, SimcseTrainDataset, AugmentTrainDataset
 from function.seed import seed_everything
@@ -61,7 +61,7 @@ parser.add_argument("--test_file", type=str, default="data/stsbenchmark/sts-test
 parser.add_argument("--test_model")  # only evaluate other model when do_train is false
 # Save model and define the output path. If the output is not none, the result is saved to result file by default.
 parser.add_argument("--save_data", default=True)
-parser.add_argument("--output_path", default='test')  # , default='test'
+parser.add_argument("--output_path", default='results/unsup/ri005')  # , default='test'
 
 # GPU
 parser.add_argument('--gpu-index', default=0, type=int, help='Gpu index.')
